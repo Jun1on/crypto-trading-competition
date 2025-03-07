@@ -1,0 +1,5 @@
+@openzeppelin/=lib/openzeppelin-contracts/contracts/
+erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
+forge-std/=lib/forge-std/src/
+halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/
+@uniswap/v2-periphery/=lib/v2-periphery/contracts/
