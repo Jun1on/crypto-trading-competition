@@ -6,12 +6,12 @@ import "@openzeppelin/access/Ownable.sol";
 import "@uniswap/v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {MockToken} from "./MockToken.sol";
 
-contract TradingGame is Ownable {
-    address constant router = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2; // Optimism
+contract Competition is Ownable {
+    address public constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2; // Optimism
     address public immutable USDM;
     address[] public participants;
     mapping(address => bool) public isParticipant;
-    uint256 totalAirdropUSDM;
+    uint256 public totalAirdropUSDM;
     address public currentToken;
 
     event RoundStarted(string name, string symbol, address token);
@@ -22,7 +22,7 @@ contract TradingGame is Ownable {
         address[] memory _participants
     ) Ownable(msg.sender) {
         USDM = _USDM;
-        IERC20(USDM).approve(router, type(uint256).max);
+        IERC20(USDM).approve(ROUTER, type(uint256).max);
 
         uint256 length = _participants.length;
         for (uint256 i = 0; i < length; ) {
@@ -39,9 +39,9 @@ contract TradingGame is Ownable {
         string memory name,
         string memory symbol,
         uint256 liquidityUSDM,
-        uint256 price,
-        uint256 airdropUSDM,
-        uint256 devShare
+        uint256 liquidityToken,
+        uint256 devShare,
+        uint256 airdropUSDM
     ) external onlyOwner {
         MockToken newToken = new MockToken(name, symbol);
         currentToken = address(newToken);
@@ -50,22 +50,20 @@ contract TradingGame is Ownable {
         for (uint256 i = 0; i < length; ) {
             address participant = participants[i];
             MockToken(USDM).mint(participant, airdropUSDM);
-            totalAirdropUSDM += airdropUSDM;
             unchecked {
                 i++;
             }
         }
+        totalAirdropUSDM += airdropUSDM;
 
-        newToken.mint(owner, devShare);
-
-        uint256 liquidityToken = (liquidityUSDM * 1e18) / price;
+        newToken.mint(owner(), devShare);
 
         newToken.mint(address(this), liquidityToken);
-        IERC20(USDM).mint(address(this), liquidityUSDM);
+        MockToken(USDM).mint(address(this), liquidityUSDM);
 
-        newToken.approve(router, liquidityToken);
+        newToken.approve(ROUTER, liquidityToken);
 
-        IUniswapV2Router02(router).addLiquidity(
+        IUniswapV2Router02(ROUTER).addLiquidity(
             address(newToken),
             USDM,
             liquidityToken,
@@ -82,8 +80,8 @@ contract TradingGame is Ownable {
     function endRound() external onlyOwner {
         require(currentToken != address(0), "No current token to pause");
         MockToken(currentToken).pause();
-        currentToken = address(0);
         emit RoundEnded(currentToken);
+        currentToken = address(0);
     }
 
     // Add a new player mid-game
@@ -93,7 +91,6 @@ contract TradingGame is Ownable {
         participants.push(player);
         isParticipant[player] = true;
 
-        IERC20(USDM).mint(player, totalAirdropUSDM);
-        totalAirdropUSDM[player] += totalAirdropUSDM;
+        MockToken(USDM).mint(player, totalAirdropUSDM);
     }
 }

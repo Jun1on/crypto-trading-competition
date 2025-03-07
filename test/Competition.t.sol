@@ -1,24 +1,88 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Competition} from "../src/Competition.sol";
+import "../src/Competition.sol";
+import "../src/MockToken.sol";
 
 contract CompetitionTest is Test {
-    Competition public competition;
+    Competition competition;
+    MockToken USDM;
+    address owner = address(0x1);
+    address[] participants = [address(0x2), address(0x3)];
+    address constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2;
 
     function setUp() public {
-        competition = new Competition();
-        competition.setNumber(0);
+        vm.createSelectFork("https://mainnet.optimism.io");
+
+        vm.startPrank(owner);
+        USDM = new MockToken("Mock USD", "USDM");
+        competition = new Competition(address(USDM), participants);
+
+        USDM.transferOwnership(address(competition));
+        vm.stopPrank();
     }
 
-    function test_Increment() public {
-        competition.increment();
-        assertEq(competition.number(), 1);
+    function testConstructor() public {
+        assertEq(competition.USDM(), address(USDM));
+        assertEq(competition.participants(0), address(0x2));
+        assertEq(competition.participants(1), address(0x3));
+        assertTrue(competition.isParticipant(address(0x2)));
+        assertEq(competition.owner(), owner);
     }
 
-    function testFuzz_SetNumber(uint256 x) public {
-        competition.setNumber(x);
-        assertEq(competition.number(), x);
+    function testStartRound() public {
+        vm.startPrank(owner);
+        competition.startRound(
+            "TestToken",
+            "TTK",
+            1000e18,
+            1000e18,
+            100e18,
+            50e18
+        );
+
+        address currentToken = competition.currentToken();
+        assertTrue(currentToken != address(0));
+        assertEq(MockToken(currentToken).balanceOf(owner), 100e18); // devShare
+        assertEq(USDM.balanceOf(address(0x2)), 50e18);
+        assertEq(USDM.balanceOf(address(0x3)), 50e18);
+        assertEq(competition.totalAirdropUSDM(), 50e18);
+        vm.stopPrank();
+    }
+
+    function testAddPlayer() public {
+        vm.startPrank(owner);
+        competition.startRound(
+            "TestToken",
+            "TTK",
+            1000e18,
+            1000e18,
+            100e18,
+            50e18
+        );
+        competition.addPlayer(address(0x4));
+
+        assertTrue(competition.isParticipant(address(0x4)));
+        assertEq(USDM.balanceOf(address(0x4)), 50e18);
+        vm.stopPrank();
+    }
+
+    function testEndRound() public {
+        vm.startPrank(owner);
+        competition.startRound(
+            "TestToken",
+            "TTK",
+            1000e18,
+            1000e18,
+            100e18,
+            50e18
+        );
+        address token = competition.currentToken();
+        competition.endRound();
+
+        assertEq(competition.currentToken(), address(0));
+        assertTrue(MockToken(token).paused());
+        vm.stopPrank();
     }
 }

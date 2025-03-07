@@ -18,4 +18,12 @@ contract MockToken is ERC20, ERC20Pausable, Ownable {
     function pause() external onlyOwner {
         _pause();
     }
+
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal override(ERC20, ERC20Pausable) {
+        ERC20Pausable._update(from, to, value);
+    }
 }
