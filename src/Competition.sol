@@ -7,12 +7,15 @@ import "@uniswap/v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {MockToken} from "./MockToken.sol";
 
 contract Competition is Ownable {
-    address public constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2; // Optimism
+    address public constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2;
     address public immutable USDM;
     address[] public participants;
     mapping(address => bool) public isParticipant;
     uint256 public totalAirdropUSDM;
     address public currentToken;
+    uint256 public currentRound;
+    mapping(address => mapping(uint256 => int256)) public playerPNLHistory;
+    uint256 public participantsLength;
 
     event RoundStarted(string name, string symbol, address token);
     event RoundEnded(address token);
@@ -24,8 +27,8 @@ contract Competition is Ownable {
         USDM = _USDM;
         IERC20(USDM).approve(ROUTER, type(uint256).max);
 
-        uint256 length = _participants.length;
-        for (uint256 i = 0; i < length; ) {
+        participantsLength = _participants.length;
+        for (uint256 i = 0; i < participantsLength; ) {
             address participant = _participants[i];
             participants.push(participant);
             isParticipant[participant] = true;
@@ -78,19 +81,90 @@ contract Competition is Ownable {
     }
 
     function endRound() external onlyOwner {
-        require(currentToken != address(0), "No current token to pause");
+        require(currentToken != address(0), "already ended");
         MockToken(currentToken).pause();
         emit RoundEnded(currentToken);
         currentToken = address(0);
+        _logPNL();
+        unchecked {
+            currentRound++;
+        }
     }
 
-    // Add a new player mid-game
+    /**
+     * @notice Add a new player mid-game
+     */
     function addPlayer(address player) external onlyOwner {
-        require(!isParticipant[player], "Player already added");
+        require(!isParticipant[player], "already added");
 
         participants.push(player);
         isParticipant[player] = true;
+        participantsLength++;
 
         MockToken(USDM).mint(player, totalAirdropUSDM);
+    }
+
+    function _logPNL() internal {
+        uint256 length = participants.length;
+        for (uint256 i = 0; i < length; ) {
+            address player = participants[i];
+            playerPNLHistory[player][currentRound] = _realizedPNL(player);
+            unchecked {
+                i++;
+            }
+        }
+    }
+
+    function _realizedPNL(
+        address player
+    ) internal view returns (int256 realizedPNL) {
+        uint256 balanceUSDM = IERC20(USDM).balanceOf(player);
+        unchecked {
+            if (balanceUSDM >= totalAirdropUSDM) {
+                realizedPNL = int256(balanceUSDM - totalAirdropUSDM);
+            } else {
+                realizedPNL = -int256(totalAirdropUSDM - balanceUSDM);
+            }
+        }
+    }
+
+    /**
+     * @notice Calculates the realized and unrealized PNL for a given player
+     * @param player The address of the player
+     * @return realizedPNL The players realized PNL from USDM balance (signed integer)
+     * @return unrealizedPNL The players unrealized PNL from current token holdings (integer)
+     */
+    function getPNL(
+        address player
+    ) external view returns (int256 realizedPNL, int256 unrealizedPNL) {
+        require(isParticipant[player], "Not a participant");
+
+        realizedPNL = _realizedPNL(player);
+
+        unrealizedPNL = 0;
+        if (currentToken != address(0)) {
+            uint256 tokenBalance = IERC20(currentToken).balanceOf(player);
+            if (tokenBalance > 0) {
+                address[] memory path = new address[](2);
+                path[0] = currentToken;
+                path[1] = USDM;
+                uint256[] memory amounts = IUniswapV2Router02(ROUTER)
+                    .getAmountsOut(tokenBalance, path);
+                uint256 valueInUSDM = amounts[1];
+                unrealizedPNL = int256(valueInUSDM);
+            }
+        }
+    }
+
+    /**
+     * @dev Executes an arbitrary call
+     */
+    function executeCall(
+        address target,
+        bytes calldata data,
+        uint256 value
+    ) external onlyOwner returns (bool success, bytes memory result) {
+        (success, result) = target.call{value: value}(data);
+        return (success, result);
     }
 }

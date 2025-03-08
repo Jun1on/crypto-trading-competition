@@ -25,7 +25,7 @@ contract DeployCompetition is Script {
         vm.startBroadcast();
         MockUSD USDM = deployUSDMWithPrefix();
         Competition competition = new Competition(address(USDM), participants);
-        USDM.mint(address(this), 1000000e18);
+        USDM.mint(msg.sender, 1000000e18);
         USDM.transferOwnership(address(competition));
         vm.stopBroadcast();
         console.log("USDM deployed at:", address(USDM));

@@ -48,6 +48,16 @@ contract CompetitionTest is Test {
         assertEq(USDM.balanceOf(address(0x2)), 50e18);
         assertEq(USDM.balanceOf(address(0x3)), 50e18);
         assertEq(competition.totalAirdropUSDM(), 50e18);
+
+        competition.startRound(
+            "TestToken2",
+            "TTK2",
+            1000e18,
+            1000e18,
+            100e18,
+            50e18
+        );
+        competition.addPlayer(address(0x4));
         vm.stopPrank();
     }
 
