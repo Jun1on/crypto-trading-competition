@@ -17,13 +17,13 @@ contract CompetitionTest is Test {
 
         vm.startPrank(owner);
         USDM = new MockToken("Mock USD", "USDM");
-        competition = new Competition(address(USDM), participants);
+        competition = new Competition(address(USDM), address(99), participants);
 
         USDM.transferOwnership(address(competition));
         vm.stopPrank();
     }
 
-    function testConstructor() public {
+    function testConstructor() public view {
         assertEq(competition.USDM(), address(USDM));
         assertEq(competition.participants(0), address(0x2));
         assertEq(competition.participants(1), address(0x3));
@@ -39,6 +39,8 @@ contract CompetitionTest is Test {
             1000e18,
             1000e18,
             100e18,
+            0,
+            0,
             50e18
         );
 
@@ -49,11 +51,15 @@ contract CompetitionTest is Test {
         assertEq(USDM.balanceOf(address(0x3)), 50e18);
         assertEq(competition.totalAirdropUSDM(), 50e18);
 
+        competition.endRound();
+
         competition.startRound(
             "TestToken2",
             "TTK2",
             1000e18,
             1000e18,
+            100e18,
+            100e18,
             100e18,
             50e18
         );
@@ -69,6 +75,8 @@ contract CompetitionTest is Test {
             1000e18,
             1000e18,
             100e18,
+            0,
+            0,
             50e18
         );
         competition.addPlayer(address(0x4));
@@ -86,6 +94,8 @@ contract CompetitionTest is Test {
             1000e18,
             1000e18,
             100e18,
+            0,
+            0,
             50e18
         );
         address token = competition.currentToken();

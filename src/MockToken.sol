@@ -15,6 +15,10 @@ contract MockToken is ERC20, ERC20Pausable, Ownable {
         _mint(to, amount);
     }
 
+    function burn(address from, uint256 amount) external onlyOwner {
+        _burn(from, amount);
+    }
+
     function pause() external onlyOwner {
         _pause();
     }

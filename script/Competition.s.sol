@@ -21,11 +21,17 @@ import {MockUSD} from "../src/MockUSD.sol";
 import {Competition} from "../src/Competition.sol";
 
 contract DeployCompetition is Script {
+    address constant MARKET_MAKER = 0x4F1246A39B02ef2e7432D81fd5bfAA884D72EEEE;
+
     function run(address[] memory participants) external {
         vm.startBroadcast();
         MockUSD USDM = deployUSDMWithPrefix();
-        Competition competition = new Competition(address(USDM), participants);
-        USDM.mint(msg.sender, 1000000e18);
+        Competition competition = new Competition(
+            address(USDM),
+            MARKET_MAKER,
+            participants
+        );
+        USDM.mint(msg.sender, 10_000_000e18);
         USDM.transferOwnership(address(competition));
         vm.stopBroadcast();
         console.log("USDM deployed at:", address(USDM));

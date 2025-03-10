@@ -5,10 +5,12 @@ import "@openzeppelin/token/ERC20/ERC20.sol";
 import "@openzeppelin/access/Ownable.sol";
 import "@uniswap/v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {MockToken} from "./MockToken.sol";
+import {MockUSD} from "./MockUSD.sol";
 
 contract Competition is Ownable {
     address public constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2;
     address public immutable USDM;
+    address public immutable marketMaker;
     address[] public participants;
     mapping(address => bool) public isParticipant;
     uint256 public totalAirdropUSDM;
@@ -22,9 +24,11 @@ contract Competition is Ownable {
 
     constructor(
         address _USDM,
+        address _marketMaker,
         address[] memory _participants
     ) Ownable(msg.sender) {
         USDM = _USDM;
+        marketMaker = _marketMaker;
         IERC20(USDM).approve(ROUTER, type(uint256).max);
 
         participantsLength = _participants.length;
@@ -44,15 +48,19 @@ contract Competition is Ownable {
         uint256 liquidityUSDM,
         uint256 liquidityToken,
         uint256 devShare,
+        uint256 marketMakerShare,
+        uint256 marketMakerUSDM,
         uint256 airdropUSDM
     ) external onlyOwner {
+        require(currentToken == address(0), "already started");
+
         MockToken newToken = new MockToken(name, symbol);
         currentToken = address(newToken);
 
         uint256 length = participants.length;
         for (uint256 i = 0; i < length; ) {
             address participant = participants[i];
-            MockToken(USDM).mint(participant, airdropUSDM);
+            MockUSD(USDM).mint(participant, airdropUSDM);
             unchecked {
                 i++;
             }
@@ -60,9 +68,11 @@ contract Competition is Ownable {
         totalAirdropUSDM += airdropUSDM;
 
         newToken.mint(owner(), devShare);
+        newToken.mint(marketMaker, marketMakerShare);
+        MockUSD(USDM).mint(marketMaker, marketMakerUSDM);
 
         newToken.mint(address(this), liquidityToken);
-        MockToken(USDM).mint(address(this), liquidityUSDM);
+        MockUSD(USDM).mint(address(this), liquidityUSDM);
 
         newToken.approve(ROUTER, liquidityToken);
 
@@ -82,8 +92,23 @@ contract Competition is Ownable {
 
     function endRound() external onlyOwner {
         require(currentToken != address(0), "already ended");
+
+        // todo: autosell tokens
+        uint256 length = participants.length;
+        for (uint256 i = 0; i < length; ) {
+            address participant = participants[i];
+            MockToken(currentToken).burn(
+                participant,
+                MockToken(currentToken).balanceOf(participant)
+            );
+            unchecked {
+                i++;
+            }
+        }
         MockToken(currentToken).pause();
+        MockUSD(USDM).burn(marketMaker, ERC20(USDM).balanceOf(marketMaker));
         emit RoundEnded(currentToken);
+
         currentToken = address(0);
         _logPNL();
         unchecked {
