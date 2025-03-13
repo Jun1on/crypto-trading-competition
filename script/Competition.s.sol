@@ -1,16 +1,15 @@
-// modify the top four parameters
+// modify the bottom four parameters
 /*
 forge script script/Competition.s.sol:DeployCompetition \
-  --private-key 0x1234 \
-  --sig "run(address[])" "[0x1,0x2]" \
-  --etherscan-api-key API_KEY \
-  --with-gas-price 2000000 \
-
   --rpc-url https://mainnet.optimism.io \
   --broadcast \
   --verify \
   --chain 10 \
   --memory-limit 9999999999
+  --private-key 0x1234 \
+  --sig "run(address[])" "[0x1,0x2]" \
+  --etherscan-api-key API_KEY \
+  --with-gas-price 2000000 \
 */
 
 // SPDX-License-Identifier: MIT
@@ -22,9 +21,13 @@ import {Competition} from "../src/Competition.sol";
 
 contract DeployCompetition is Script {
     address constant MARKET_MAKER = 0x4F1246A39B02ef2e7432D81fd5bfAA884D72EEEE;
+    uint256 constant GAS_DISTRIBUTION = 0.00002 ether; // adjust
 
     function run(address[] memory participants) external {
         vm.startBroadcast();
+        for (uint256 i = 0; i < participants.length; i++) {
+            participants[i].call{value: GAS_DISTRIBUTION}("");
+        }
         MockUSD USDM = deployUSDMWithPrefix();
         Competition competition = new Competition(
             address(USDM),
@@ -32,7 +35,18 @@ contract DeployCompetition is Script {
             participants
         );
         USDM.mint(msg.sender, 10_000_000e18);
+        uint256 liquidity = 1 ether * participants.length + 5 ether;
         USDM.transferOwnership(address(competition));
+        competition.startRound(
+            "Test Token",
+            "TEST",
+            liquidity,
+            liquidity,
+            1000 ether,
+            liquidity,
+            liquidity,
+            5 ether
+        );
         vm.stopBroadcast();
         console.log("USDM deployed at:", address(USDM));
         console.log("Competition deployed at:", address(competition));
