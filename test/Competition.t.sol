@@ -52,7 +52,7 @@ contract CompetitionTest is Test {
         assertEq(MockToken(currentToken).balanceOf(owner), 100e18); // devShare
         assertEq(USDM.balanceOf(address(0x2)), 50e18);
         assertEq(USDM.balanceOf(address(0x3)), 50e18);
-        assertEq(competition.cumulativeAirdropPerParticipantUSDM(), 50e18);
+        assertEq(competition.totalAirdropUSDM(), 50e18);
 
         competition.endRound();
 

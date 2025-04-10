@@ -22,7 +22,7 @@ contract Competition is Ownable {
     address public immutable marketMaker;
     address[] public participants;
     mapping(address => bool) public isParticipant;
-    uint256 public cumulativeAirdropPerParticipantUSDM;
+    uint256 public totalAirdropUSDM;
     uint256 public currentRound;
     mapping(uint256 => RoundInfo) public rounds;
     mapping(address => mapping(uint256 => int256)) public playerPNLHistory;
@@ -43,8 +43,6 @@ contract Competition is Ownable {
     ) Ownable(msg.sender) {
         USDM = _USDM;
         marketMaker = _marketMaker;
-
-        cumulativeAirdropPerParticipantUSDM = 0;
 
         participantsLength = _participants.length;
         for (uint256 i = 0; i < participantsLength; ) {
@@ -84,7 +82,7 @@ contract Competition is Ownable {
                 i++;
             }
         }
-        cumulativeAirdropPerParticipantUSDM += airdropUSDM;
+        totalAirdropUSDM += airdropUSDM;
 
         newToken.mint(owner(), devShare);
         newToken.mint(marketMaker, marketMakerShare);
@@ -92,7 +90,6 @@ contract Competition is Ownable {
 
         newToken.mint(address(this), liquidityToken);
         MockUSD(USDM).mint(address(this), liquidityUSDM);
-
         IUniswapV2Router02(ROUTER).addLiquidity(
             currentTokenAddress,
             USDM,
@@ -202,7 +199,7 @@ contract Competition is Ownable {
         isParticipant[player] = true;
         participantsLength++;
 
-        MockToken(USDM).mint(player, cumulativeAirdropPerParticipantUSDM);
+        MockToken(USDM).mint(player, totalAirdropUSDM);
     }
 
     function _logPNL() internal {
@@ -220,7 +217,7 @@ contract Competition is Ownable {
         address player
     ) internal view returns (int256 realizedPNL) {
         uint256 balanceUSDM = IERC20(USDM).balanceOf(player);
-        uint256 totalReceivedUSDM = cumulativeAirdropPerParticipantUSDM;
+        uint256 totalReceivedUSDM = totalAirdropUSDM;
         unchecked {
             if (balanceUSDM >= totalReceivedUSDM) {
                 realizedPNL = int256(balanceUSDM - totalReceivedUSDM);
