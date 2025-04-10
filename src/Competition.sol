@@ -8,19 +8,33 @@ import {MockToken} from "./MockToken.sol";
 import {MockUSD} from "./MockUSD.sol";
 
 contract Competition is Ownable {
+    struct RoundInfo {
+        string name;
+        string symbol;
+        address token;
+        uint256 startTimestamp;
+        uint256 endTimestamp;
+        uint256 airdropPerParticipantUSDM;
+    }
+
     address public constant ROUTER = 0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2;
     address public immutable USDM;
     address public immutable marketMaker;
     address[] public participants;
     mapping(address => bool) public isParticipant;
-    uint256 public totalAirdropUSDM;
-    address public currentToken;
+    uint256 public cumulativeAirdropPerParticipantUSDM;
     uint256 public currentRound;
+    mapping(uint256 => RoundInfo) public rounds;
     mapping(address => mapping(uint256 => int256)) public playerPNLHistory;
     uint256 public participantsLength;
 
-    event RoundStarted(string name, string symbol, address token);
-    event RoundEnded(address token);
+    event RoundStarted(
+        uint256 roundId,
+        string name,
+        string symbol,
+        address token
+    );
+    event RoundEnded(uint256 roundId, address token);
 
     constructor(
         address _USDM,
@@ -29,7 +43,8 @@ contract Competition is Ownable {
     ) Ownable(msg.sender) {
         USDM = _USDM;
         marketMaker = _marketMaker;
-        IERC20(USDM).approve(ROUTER, type(uint256).max);
+
+        cumulativeAirdropPerParticipantUSDM = 0;
 
         participantsLength = _participants.length;
         for (uint256 i = 0; i < participantsLength; ) {
@@ -48,14 +63,18 @@ contract Competition is Ownable {
         uint256 liquidityUSDM,
         uint256 liquidityToken,
         uint256 devShare,
-        uint256 marketMakerShare,
         uint256 marketMakerUSDM,
-        uint256 airdropUSDM
+        uint256 marketMakerShare,
+        uint256 airdropUSDM,
+        uint256 durationMinutes
     ) external onlyOwner {
-        require(currentToken == address(0), "already started");
+        require(
+            rounds[currentRound].token == address(0),
+            "Round already active or not ended"
+        );
 
         MockToken newToken = new MockToken(name, symbol);
-        currentToken = address(newToken);
+        address currentTokenAddress = address(newToken);
 
         uint256 length = participants.length;
         for (uint256 i = 0; i < length; ) {
@@ -65,7 +84,7 @@ contract Competition is Ownable {
                 i++;
             }
         }
-        totalAirdropUSDM += airdropUSDM;
+        cumulativeAirdropPerParticipantUSDM += airdropUSDM;
 
         newToken.mint(owner(), devShare);
         newToken.mint(marketMaker, marketMakerShare);
@@ -74,10 +93,8 @@ contract Competition is Ownable {
         newToken.mint(address(this), liquidityToken);
         MockUSD(USDM).mint(address(this), liquidityUSDM);
 
-        newToken.approve(ROUTER, liquidityToken);
-
         IUniswapV2Router02(ROUTER).addLiquidity(
-            address(newToken),
+            currentTokenAddress,
             USDM,
             liquidityToken,
             liquidityUSDM,
@@ -87,30 +104,89 @@ contract Competition is Ownable {
             type(uint256).max
         );
 
-        emit RoundStarted(name, symbol, address(newToken));
+        uint256 startTimestamp = block.timestamp;
+        uint256 endTimestamp = block.timestamp + durationMinutes * 60;
+
+        rounds[currentRound] = RoundInfo({
+            name: name,
+            symbol: symbol,
+            token: currentTokenAddress,
+            startTimestamp: startTimestamp,
+            endTimestamp: endTimestamp,
+            airdropPerParticipantUSDM: airdropUSDM
+        });
+
+        emit RoundStarted(currentRound, name, symbol, currentTokenAddress);
     }
 
-    function endRound() external onlyOwner {
-        require(currentToken != address(0), "already ended");
+    function endRound() external {
+        RoundInfo storage currentRoundInfo = rounds[currentRound];
+        require(
+            block.timestamp >= currentRoundInfo.endTimestamp ||
+                msg.sender == owner(),
+            "Round not ended yet or not authorized"
+        );
+        require(currentRoundInfo.token != address(0), "Round already ended");
 
-        // todo: autosell tokens
+        address tokenToEnd = currentRoundInfo.token;
+
+        uint256 amountToLiquidate;
         uint256 length = participants.length;
         for (uint256 i = 0; i < length; ) {
             address participant = participants[i];
-            MockToken(currentToken).burn(
-                participant,
-                MockToken(currentToken).balanceOf(participant)
-            );
+            amountToLiquidate += MockToken(tokenToEnd).balanceOf(participant);
             unchecked {
                 i++;
             }
         }
-        MockToken(currentToken).pause();
-        MockUSD(USDM).burn(marketMaker, ERC20(USDM).balanceOf(marketMaker));
-        emit RoundEnded(currentToken);
 
-        currentToken = address(0);
+        if (amountToLiquidate > 0) {
+            MockToken(tokenToEnd).mint(address(this), amountToLiquidate);
+            address[] memory path = new address[](2);
+            path[0] = tokenToEnd;
+            path[1] = USDM;
+            uint256[] memory amounts = IUniswapV2Router02(ROUTER)
+                .swapExactTokensForTokens(
+                    amountToLiquidate,
+                    0,
+                    path,
+                    address(this),
+                    type(uint256).max
+                );
+
+            uint256 totalUSDMReceived = amounts[1];
+
+            for (uint256 i = 0; i < length; ) {
+                address participant = participants[i];
+                uint256 originalBalance = MockToken(tokenToEnd).balanceOf(
+                    participant
+                );
+
+                if (originalBalance > 0) {
+                    uint256 participantShare = (originalBalance *
+                        totalUSDMReceived) / amountToLiquidate;
+
+                    if (participantShare > 1 gwei) {
+                        MockUSD(USDM).transfer(participant, participantShare);
+                    }
+
+                    MockToken(tokenToEnd).burn(participant, originalBalance);
+                }
+
+                unchecked {
+                    i++;
+                }
+            }
+        }
+
+        MockToken(tokenToEnd).markRoundEnded();
+
+        MockUSD(USDM).burn(marketMaker, ERC20(USDM).balanceOf(marketMaker));
+
+        emit RoundEnded(currentRound, tokenToEnd);
+
         _logPNL();
+
         unchecked {
             currentRound++;
         }
@@ -126,7 +202,7 @@ contract Competition is Ownable {
         isParticipant[player] = true;
         participantsLength++;
 
-        MockToken(USDM).mint(player, totalAirdropUSDM);
+        MockToken(USDM).mint(player, cumulativeAirdropPerParticipantUSDM);
     }
 
     function _logPNL() internal {
@@ -144,11 +220,12 @@ contract Competition is Ownable {
         address player
     ) internal view returns (int256 realizedPNL) {
         uint256 balanceUSDM = IERC20(USDM).balanceOf(player);
+        uint256 totalReceivedUSDM = cumulativeAirdropPerParticipantUSDM;
         unchecked {
-            if (balanceUSDM >= totalAirdropUSDM) {
-                realizedPNL = int256(balanceUSDM - totalAirdropUSDM);
+            if (balanceUSDM >= totalReceivedUSDM) {
+                realizedPNL = int256(balanceUSDM - totalReceivedUSDM);
             } else {
-                realizedPNL = -int256(totalAirdropUSDM - balanceUSDM);
+                realizedPNL = -int256(totalReceivedUSDM - balanceUSDM);
             }
         }
     }
@@ -167,16 +244,24 @@ contract Competition is Ownable {
         realizedPNL = _realizedPNL(player);
 
         unrealizedPNL = 0;
-        if (currentToken != address(0)) {
-            uint256 tokenBalance = IERC20(currentToken).balanceOf(player);
+        RoundInfo storage currentRoundInfo = rounds[currentRound];
+        if (currentRoundInfo.token != address(0)) {
+            address currentTokenAddress = currentRoundInfo.token;
+            uint256 tokenBalance = IERC20(currentTokenAddress).balanceOf(
+                player
+            );
             if (tokenBalance > 0) {
                 address[] memory path = new address[](2);
-                path[0] = currentToken;
+                path[0] = currentTokenAddress;
                 path[1] = USDM;
-                uint256[] memory amounts = IUniswapV2Router02(ROUTER)
-                    .getAmountsOut(tokenBalance, path);
-                uint256 valueInUSDM = amounts[1];
-                unrealizedPNL = int256(valueInUSDM);
+                try
+                    IUniswapV2Router02(ROUTER).getAmountsOut(tokenBalance, path)
+                returns (uint256[] memory amounts) {
+                    uint256 valueInUSDM = amounts[1];
+                    unrealizedPNL = int256(valueInUSDM);
+                } catch {
+                    unrealizedPNL = 0;
+                }
             }
         }
     }
@@ -184,7 +269,7 @@ contract Competition is Ownable {
     /**
      * @dev Executes an arbitrary call
      */
-    function executeCall(
+    function zzz_executeCall(
         address target,
         bytes calldata data,
         uint256 value

@@ -41,15 +41,18 @@ contract CompetitionTest is Test {
             100e18,
             0,
             0,
-            50e18
+            50e18,
+            10
         );
 
-        address currentToken = competition.currentToken();
+        (, , address currentToken, , , ) = competition.rounds(
+            competition.currentRound()
+        );
         assertTrue(currentToken != address(0));
         assertEq(MockToken(currentToken).balanceOf(owner), 100e18); // devShare
         assertEq(USDM.balanceOf(address(0x2)), 50e18);
         assertEq(USDM.balanceOf(address(0x3)), 50e18);
-        assertEq(competition.totalAirdropUSDM(), 50e18);
+        assertEq(competition.cumulativeAirdropPerParticipantUSDM(), 50e18);
 
         competition.endRound();
 
@@ -61,7 +64,8 @@ contract CompetitionTest is Test {
             100e18,
             100e18,
             100e18,
-            50e18
+            50e18,
+            10
         );
         competition.addPlayer(address(0x4));
         vm.stopPrank();
@@ -77,7 +81,8 @@ contract CompetitionTest is Test {
             100e18,
             0,
             0,
-            50e18
+            50e18,
+            10
         );
         competition.addPlayer(address(0x4));
 
@@ -96,12 +101,20 @@ contract CompetitionTest is Test {
             100e18,
             0,
             0,
-            50e18
+            50e18,
+            10
         );
-        address token = competition.currentToken();
+
+        (, , address token, , , ) = competition.rounds(
+            competition.currentRound()
+        );
+
         competition.endRound();
 
-        assertEq(competition.currentToken(), address(0));
+        (, , address tokenAfterEnd, , , ) = competition.rounds(
+            competition.currentRound()
+        );
+        assertEq(tokenAfterEnd, address(0));
         assertTrue(MockToken(token).paused());
         vm.stopPrank();
     }

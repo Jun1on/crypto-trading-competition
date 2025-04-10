@@ -5,10 +5,10 @@ forge script script/Competition.s.sol:DeployCompetition \
   --broadcast \
   --verify \
   --chain 10 \
-  --memory-limit 9999999999
+  --memory-limit 9999999999 \
   --private-key 0x1234 \
-  --sig "run(address[])" "[0x1,0x2]" \
   --etherscan-api-key API_KEY \
+  --sig "run(address[])" "[0x1,0x2]" \
   --with-gas-price 2000000 \
 */
 
@@ -26,7 +26,7 @@ contract DeployCompetition is Script {
     function run(address[] memory participants) external {
         vm.startBroadcast();
         for (uint256 i = 0; i < participants.length; i++) {
-            participants[i].call{value: GAS_DISTRIBUTION}("");
+            //participants[i].call{value: GAS_DISTRIBUTION}("");
         }
         MockUSD USDM = deployUSDMWithPrefix();
         Competition competition = new Competition(
@@ -45,7 +45,8 @@ contract DeployCompetition is Script {
             1000 ether,
             liquidity,
             liquidity,
-            5 ether
+            5 ether,
+            1440
         );
         vm.stopBroadcast();
         console.log("USDM deployed at:", address(USDM));
