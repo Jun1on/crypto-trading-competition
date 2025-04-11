@@ -256,12 +256,14 @@ contract Periphery {
                 realized -= realizedPNL;
                 tokensOwnedByPeople += MockToken(token).balanceOf(participant);
             }
-            address[] memory path = new address[](2);
-            path[0] = token;
-            path[1] = competition.USDM();
-            uint256 amountOut = IUniswapV2Router02(competition.ROUTER())
-                .getAmountsOut(tokensOwnedByPeople, path)[1];
-            unrealized -= int256(amountOut);
+            if (tokensOwnedByPeople > 0) {
+                address[] memory path = new address[](2);
+                path[0] = token;
+                path[1] = competition.USDM();
+                uint256 amountOut = IUniswapV2Router02(competition.ROUTER())
+                    .getAmountsOut(tokensOwnedByPeople, path)[1];
+                unrealized -= int256(amountOut);
+            }
         } else {
             for (uint256 i = 0; i < len; i++) {
                 address participant = competition.participants(i);
