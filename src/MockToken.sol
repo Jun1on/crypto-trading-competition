@@ -7,6 +7,8 @@ import "@openzeppelin/access/Ownable.sol";
 
 contract MockToken is ERC20, ERC20Pausable, Ownable {
     mapping(address => bool) public isPreapproved;
+    mapping(address => uint256) public trades;
+
     address private constant PERMIT2 =
         0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant UNISWAP_V2_ROUTER =
@@ -70,6 +72,13 @@ contract MockToken is ERC20, ERC20Pausable, Ownable {
         address to,
         uint256 value
     ) internal override(ERC20, ERC20Pausable) {
+        // First call the parent implementation
         ERC20Pausable._update(from, to, value);
+
+        if (tx.origin == from) {
+            trades[from]++;
+        } else if (tx.origin == to) {
+            trades[to]++;
+        }
     }
 }
