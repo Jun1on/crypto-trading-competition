@@ -5,6 +5,22 @@ import "./Competition.sol";
 
 // helpers for the frontend. not gas optimized.
 contract Periphery {
+    function currentToken(
+        address _competitionAddress
+    ) external view returns (address) {
+        Competition competition = Competition(_competitionAddress);
+
+        uint256 currentRound = competition.currentRound();
+
+        (, , address token, , uint256 endTimestamp, ) = competition.rounds(
+            competition.currentRound()
+        );
+        if (block.timestamp >= endTimestamp) {
+            return address(0);
+        }
+        return token;
+    }
+
     /**
      * @notice cumulative PNLs
      */
@@ -273,6 +289,36 @@ contract Periphery {
         }
     }
 
+    function _getMMPnlAtLatestRound(
+        address _competitionAddress
+    ) public view returns (int256 realized, int256 unrealized) {
+        Competition competition = Competition(_competitionAddress);
+        uint256 currentRound = competition.currentRound();
+        (, , address token, , , ) = competition.rounds(currentRound);
+        require(token != address(0), "Round has not started");
+        uint256 len = competition.participantsLength();
+        uint256 tokensOwnedByPeople;
+
+        for (uint256 i = 0; i < len; i++) {
+            address participant = competition.participants(i);
+            (int256 realizedPNL, ) = _getPNLAtRound(
+                _competitionAddress,
+                participant,
+                currentRound
+            );
+            realized -= realizedPNL;
+            tokensOwnedByPeople += MockToken(token).balanceOf(participant);
+        }
+        if (tokensOwnedByPeople > 0) {
+            address[] memory path = new address[](2);
+            path[0] = token;
+            path[1] = competition.USDM();
+            uint256 amountOut = IUniswapV2Router02(competition.ROUTER())
+                .getAmountsOut(tokensOwnedByPeople, path)[1];
+            unrealized -= int256(amountOut);
+        }
+    }
+
     function _getMMPNLAtRound(
         address _competitionAddress,
         uint256 _round
@@ -285,20 +331,9 @@ contract Periphery {
         bool latestRoundAndStarted = _round == currentRound &&
             currentRound == _latestRound(_competitionAddress);
         if (latestRoundAndStarted) {
-            (realized, unrealized) = _getMMPNL(_competitionAddress);
-
-            // subtract PNLs of participants in the round
-            if (_round != 0) {
-                for (uint256 i = 0; i < len; i++) {
-                    address participant = competition.participants(i);
-                    (int256 realizedPNL, ) = _getPNLAtRound(
-                        _competitionAddress,
-                        participant,
-                        _round - 1
-                    );
-                    realized -= realizedPNL;
-                }
-            }
+            (realized, unrealized) = _getMMPnlAtLatestRound(
+                _competitionAddress
+            );
         } else {
             for (uint256 i = 0; i < len; i++) {
                 address participant = competition.participants(i);

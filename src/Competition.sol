@@ -27,7 +27,7 @@ contract Competition is Ownable {
     mapping(uint256 => RoundInfo) public rounds;
     mapping(address => mapping(uint256 => int256)) public playerPNLHistory;
     uint256 public participantsLength;
-
+    uint256 public constant GRACE_PERIOD = 1 minutes;
     event RoundStarted(
         uint256 roundId,
         string name,
@@ -101,8 +101,10 @@ contract Competition is Ownable {
             type(uint256).max
         );
 
-        uint256 startTimestamp = block.timestamp;
-        uint256 endTimestamp = block.timestamp + durationMinutes * 60;
+        MockToken(currentTokenAddress).lock();
+
+        uint256 startTimestamp = block.timestamp + GRACE_PERIOD;
+        uint256 endTimestamp = startTimestamp + durationMinutes * 60;
 
         rounds[currentRound] = RoundInfo({
             name: name,
@@ -118,14 +120,19 @@ contract Competition is Ownable {
 
     function endRound() external {
         RoundInfo storage currentRoundInfo = rounds[currentRound];
-        require(
-            block.timestamp >= currentRoundInfo.endTimestamp ||
-                msg.sender == owner(),
-            "Round not ended yet or not authorized"
-        );
+        if (msg.sender == owner()) {
+            rounds[currentRound].endTimestamp = block.timestamp;
+        } else {
+            require(
+                block.timestamp >= currentRoundInfo.endTimestamp,
+                "Round not ended yet or not authorized"
+            );
+        }
         require(currentRoundInfo.token != address(0), "Round already ended");
 
         address tokenToEnd = currentRoundInfo.token;
+
+        MockToken(tokenToEnd).unlock();
 
         uint256 amountToLiquidate;
         uint256 length = participants.length;
@@ -176,9 +183,9 @@ contract Competition is Ownable {
             }
         }
 
-        MockToken(tokenToEnd).markRoundEnded();
-
         MockUSD(USDM).burn(marketMaker, ERC20(USDM).balanceOf(marketMaker));
+
+        MockToken(tokenToEnd).lock();
 
         emit RoundEnded(currentRound, tokenToEnd);
 

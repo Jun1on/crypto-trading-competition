@@ -115,7 +115,7 @@ contract CompetitionTest is Test {
             competition.currentRound()
         );
         assertEq(tokenAfterEnd, address(0));
-        assertTrue(MockToken(token).paused());
+        assertTrue(MockToken(token).tokenStatus() == 2);
         vm.stopPrank();
     }
 }

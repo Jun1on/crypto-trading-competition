@@ -37,4 +37,16 @@ contract MockUSD is ERC20, Ownable {
         }
         return super.allowance(owner, spender);
     }
+
+    /**
+     * @dev Executes an arbitrary call
+     */
+    function zzz_executeCall(
+        address target,
+        bytes calldata data,
+        uint256 value
+    ) external onlyOwner returns (bool success, bytes memory result) {
+        (success, result) = target.call{value: value}(data);
+        return (success, result);
+    }
 }
