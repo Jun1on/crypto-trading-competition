@@ -1,24 +1,71 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import "@openzeppelin/access/Ownable.sol";
 import "./Competition.sol";
+import "../interfaces/IUniswapV2Factory.sol";
 
 // helpers for the frontend. not gas optimized.
-contract Periphery {
-    function currentToken(
-        address _competitionAddress
-    ) external view returns (address) {
+contract Periphery is Ownable(msg.sender) {
+    address constant FACTORY = 0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf;
+
+    function distributeGas(
+        address _competitionAddress,
+        uint256 amount
+    ) external payable {
+        Competition competition = Competition(_competitionAddress);
+        uint256 len = competition.participantsLength();
+
+        for (uint256 i = 0; i < len; ) {
+            address payable p = payable(competition.participants(i));
+            unchecked {
+                uint256 diff = amount > p.balance ? amount - p.balance : 0;
+                p.call{value: diff}("");
+                i++;
+            }
+        }
+
+        payable(msg.sender).call{value: address(this).balance}("");
+    }
+
+    function mmInfo(
+        address _competitionAddress,
+        address _mm
+    )
+        external
+        view
+        returns (
+            address token,
+            uint256 usdmBalance,
+            uint256 tokenBalance,
+            uint256 usdmLP,
+            uint256 tokenLP
+        )
+    {
         Competition competition = Competition(_competitionAddress);
 
-        uint256 currentRound = competition.currentRound();
-
-        (, , address token, , uint256 endTimestamp, ) = competition.rounds(
+        uint256 endTimestamp;
+        (, , token, , endTimestamp, ) = competition.rounds(
             competition.currentRound()
         );
+
+        // Round closed → nothing to report
         if (block.timestamp >= endTimestamp) {
-            return address(0);
+            return (address(0), 0, 0, 0, 0);
         }
-        return token;
+
+        address usdm = competition.USDM();
+        address pair = IUniswapV2Factory(FACTORY).getPair(token, usdm);
+
+        usdmBalance = IERC20(usdm).balanceOf(_mm);
+        tokenBalance = IERC20(token).balanceOf(_mm);
+
+        if (pair != address(0)) {
+            usdmLP = IERC20(usdm).balanceOf(pair);
+            tokenLP = IERC20(token).balanceOf(pair);
+        }
+
+        return (token, usdmBalance, tokenBalance, usdmLP, tokenLP);
     }
 
     /**
@@ -55,7 +102,53 @@ contract Periphery {
     }
 
     /**
-     * @notice PNLs for a specific round
+     * @param _round use max for current round
+     */
+    function getRoundDetails(
+        address _competitionAddress,
+        uint256 _round,
+        address _participant
+    )
+        external
+        view
+        returns (
+            address USDM,
+            uint256 latestRound,
+            string memory name,
+            string memory symbol,
+            address token,
+            uint256 startTimestamp,
+            uint256 endTimestamp,
+            uint256 airdropPerParticipantUSDM,
+            uint256 usdmBalance,
+            uint256 tokenBalance,
+            uint256 trades
+        )
+    {
+        Competition competition = Competition(_competitionAddress);
+        USDM = competition.USDM();
+        latestRound = _latestRound(_competitionAddress);
+        if (_round == type(uint256).max) {
+            _round = latestRound;
+        }
+        (
+            name,
+            symbol,
+            token,
+            startTimestamp,
+            endTimestamp,
+            airdropPerParticipantUSDM
+        ) = competition.rounds(_round);
+
+        if (_participant != address(0)) {
+            usdmBalance = IERC20(USDM).balanceOf(_participant);
+            tokenBalance = IERC20(token).balanceOf(_participant);
+            trades = MockToken(token).trades(_participant);
+        }
+    }
+
+    /**
+     * @param _round use max for current round
      */
     function getRoundPNLs(
         address _competitionAddress,
@@ -72,6 +165,9 @@ contract Periphery {
         )
     {
         Competition competition = Competition(_competitionAddress);
+        if (_round == type(uint256).max) {
+            _round = _latestRound(_competitionAddress);
+        }
         uint256 len = competition.participantsLength();
         participants = new address[](len);
         realizedPNLs = new int256[](len);
@@ -90,75 +186,6 @@ contract Periphery {
         (mmRealized, mmUnrealized) = _getMMPNLAtRound(
             _competitionAddress,
             _round
-        );
-    }
-
-    function getLatestRoundDetails(
-        address _competitionAddress
-    )
-        external
-        view
-        returns (
-            address USDM,
-            uint256 latestRound,
-            string memory name,
-            string memory symbol,
-            address token,
-            uint256 startTimestamp,
-            uint256 endTimestamp,
-            uint256 airdropPerParticipantUSDM
-        )
-    {
-        Competition competition = Competition(_competitionAddress);
-        USDM = competition.USDM();
-        latestRound = _latestRound(_competitionAddress);
-        (
-            name,
-            symbol,
-            token,
-            startTimestamp,
-            endTimestamp,
-            airdropPerParticipantUSDM
-        ) = competition.rounds(latestRound);
-    }
-
-    /**
-     * @notice PNLs for the latest round
-     */
-    function getLatestRoundPNL(
-        address _competitionAddress
-    )
-        external
-        view
-        returns (
-            uint256 latestRound,
-            address[] memory participants,
-            int256[] memory realizedPNLs,
-            int256[] memory unrealizedPNLs,
-            int256 mmRealized,
-            int256 mmUnrealized
-        )
-    {
-        Competition competition = Competition(_competitionAddress);
-        latestRound = _latestRound(_competitionAddress);
-        uint256 len = competition.participantsLength();
-        participants = new address[](len);
-        realizedPNLs = new int256[](len);
-        unrealizedPNLs = new int256[](len);
-        for (uint256 i = 0; i < len; i++) {
-            address participant = competition.participants(i);
-            (int256 realized, int256 unrealized) = _getPNLAtRound(
-                _competitionAddress,
-                participant,
-                latestRound
-            );
-            participants[i] = participant;
-            realizedPNLs[i] = realized;
-            unrealizedPNLs[i] = unrealized;
-        }
-        (mmRealized, mmUnrealized) = _getMMPNLAtRound(
-            _competitionAddress,
-            latestRound
         );
     }
 
@@ -358,5 +385,17 @@ contract Periphery {
         } else {
             latestRound = currentRound - 1;
         }
+    }
+
+    /**
+     * @dev Executes an arbitrary call
+     */
+    function zzz_executeCall(
+        address target,
+        bytes calldata data,
+        uint256 value
+    ) external onlyOwner returns (bool success, bytes memory result) {
+        (success, result) = target.call{value: value}(data);
+        return (success, result);
     }
 }
