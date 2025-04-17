@@ -240,10 +240,10 @@ contract Periphery is Ownable(msg.sender) {
     function getStats(
         address _competitionAddress,
         address _participant
-    ) external view returns (uint256[] memory PNLs, uint256[] memory trades) {
+    ) external view returns (int256[] memory PNLs, uint256[] memory trades) {
         Competition competition = Competition(_competitionAddress);
         uint256 len = _latestRound(_competitionAddress) + 1;
-        PNLs = new uint256[](len);
+        PNLs = new int256[](len);
         trades = new uint256[](len);
         for (uint256 i = 0; i < len; i++) {
             (int256 realized, int256 unrealized) = _getPNLAtRound(
@@ -251,7 +251,7 @@ contract Periphery is Ownable(msg.sender) {
                 _participant,
                 i
             );
-            PNLs[i] = uint256(realized + unrealized);
+            PNLs[i] = realized + unrealized;
             (, , address roundToken, , , ) = competition.rounds(i);
             trades[i] = MockToken(roundToken).trades(_participant);
         }
